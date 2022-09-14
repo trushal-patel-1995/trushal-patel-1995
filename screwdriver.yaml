@@ -1,0 +1,77 @@
+name: dev_cicd_stg
+
+on:
+  push:
+    branches: [ stg ]
+  pull_request:
+    branches: [ stg ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+
+    strategy:
+      matrix:
+        node-version: [14.17.5]
+        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+    - name: Install dependencies
+      run: npm install
+      working-directory: ./app/dataset_editor/frontend/
+    - name: Build
+      run: npm run build
+      working-directory: ./app/dataset_editor/frontend/
+    - name: Install dependencies
+      run: npm install
+      working-directory: ./app/knowhow_system/frontend/
+    - name: Build
+      run: npm run build
+      working-directory: ./app/knowhow_system/frontend/
+    - name: Copy python code to Dev Server
+      uses: easingthemes/ssh-deploy@main
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.EC2_DEV_SSH_KEY }}
+        REMOTE_HOST: ${{ secrets.DEV_EC2_DNS }}
+        REMOTE_USER: ${{ secrets.USERNAME }}
+        TARGET: ${{ secrets.TARGET_DIR_PC_DEV }}
+        SOURCE: "./"
+    - name: Deploy DE to Dev Server
+      uses: easingthemes/ssh-deploy@main
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.EC2_DEV_SSH_KEY }}
+        REMOTE_HOST: ${{ secrets.DEV_EC2_DNS }}
+        REMOTE_USER: ${{ secrets.USERNAME }}
+        TARGET: ${{ secrets.TARGET_DIR_DE_DEV }}
+        EXCLUDE: "/dist/, /node_modules/"
+        SOURCE: "./app/dataset_editor/frontend/"
+    - name: Deploy KS to Dev Server
+      uses: easingthemes/ssh-deploy@main
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.EC2_DEV_SSH_KEY }}
+        REMOTE_HOST: ${{ secrets.DEV_EC2_DNS }}
+        REMOTE_USER: ${{ secrets.USERNAME }}
+        TARGET: ${{ secrets.TARGET_DIR_KS_DEV }}
+        EXCLUDE: "/dist/, /node_modules/"
+        SOURCE: "./app/knowhow_system/frontend/"
+  deploy:
+    needs: build
+    runs-on: ec2-dev
+    steps:
+    - name: Create Virtual environment
+      run: python3 -m venv data_integration_venv
+      working-directory: /home/ubuntu/dev-server/_work/data-integration/data-integration/
+  
+    - name: Activate Virtual Environment
+      run: source data_integration_venv/bin/activate && pip install -r requirement.txt
+      working-directory: /home/ubuntu/dev-server/_work/data-integration/data-integration/
+      
+    - name: Run Code on Server
+      run: sudo systemctl restart weldrow-com.service
